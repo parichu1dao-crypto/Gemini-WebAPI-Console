@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Gemini WebAPI Console</title>
+<style>
+:root{color-scheme:dark;--bg:#0b121a;--panel:#121e2b;--line:#2b3d4f;--ink:#edf4f8;--muted:#a8bac9;--accent:#91ecc3}*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 'Segoe UI','Microsoft YaHei',sans-serif}main{max-width:1080px;margin:auto;padding:42px 24px}header{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--line);padding-bottom:22px}header span{font-family:Consolas,monospace;color:var(--accent)}h1{font-size:clamp(34px,6vw,64px);line-height:1.12;letter-spacing:-2px;margin:50px 0 20px}p{color:var(--muted);max-width:720px}.grid{display:grid;grid-template-columns:1.6fr 1fr;gap:22px;margin-top:32px}section{padding:28px;background:var(--panel);border:1px solid var(--line);border-radius:16px}h2{font-size:21px;margin:0 0 22px}label{display:block;margin:18px 0 8px;color:var(--muted)}input,select,button{font:inherit;border:1px solid var(--line);border-radius:8px;padding:11px 14px;background:var(--bg);color:var(--ink)}input:not([type=checkbox]),select{width:100%}button{cursor:pointer}button:hover{border-color:var(--accent)}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:3px}.primary{background:var(--accent);color:#102b22;font-weight:700}.switch{display:flex;gap:14px;align-items:center;color:var(--ink);padding:16px 0;border-bottom:1px solid var(--line)}input[type=checkbox]{width:25px;height:25px;accent-color:var(--accent)}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:24px}.status{font:24px Consolas,monospace;color:var(--accent)}small{color:var(--muted)}#notice{min-height:28px;margin-top:20px;white-space:pre-wrap}footer{margin-top:35px;color:var(--muted);font-size:13px}a{color:var(--accent)}@media(max-width:720px){.grid{grid-template-columns:1fr}main{padding:24px 16px}section{padding:20px}}
+</style>
+<main><header><span>Gemini / WebAPI Console</span><small>Local-first · 本机管理</small></header>
+<h1>Own the request.<br>看清每一次调用。</h1><p>One account at a time. Every recovery in sight.<br>同账号串行、跨账号并行，让响应中断有迹可循，而不是盲目重试。</p>
+<div class="grid"><section><h2>运行策略 / Runtime policy</h2>
+<label for="key">管理密码 / Management key · data/settings.json → admin_key</label><input id="key" type="password" autocomplete="off"><button id="connect" style="margin-top:12px">连接 / Connect</button>
+<label class="switch"><input type="checkbox" id="strict" checked>严格 Pro 校验 / Strict Pro</label><small>开启：无法确认付费权限和动态Pro模型时拒绝。关闭：跳过额外校验，不代表保证实际模型，不自动转换成Flash。</small>
+<label for="model">请求模型 / Requested model</label><select id="model"><option value="gemini-3-pro">Gemini Pro</option><option value="gemini-3-flash">Gemini Flash</option><option value="gemini-3-flash-thinking">Gemini Flash Thinking</option></select>
+<label for="port">API端口 / API port</label><input id="port" type="number" min="1024" max="65535" value="8787">
+<label for="proxy">代理 / Proxy · 留空忽略账号代理</label><input id="proxy" placeholder="http://127.0.0.1:7890">
+<div class="actions"><button class="primary" id="save">保存 / Save</button><button id="start">启动 API</button><button id="stop">停止 API</button></div><div id="notice" role="status" aria-live="polite"></div>
+</section><section><h2>服务状态 / Service</h2><div id="status" class="status">未连接 / Offline</div><p id="endpoint">127.0.0.1 · loopback only</p><h2 style="margin-top:36px">账号池 / Accounts</h2><p id="accounts">连接后显示账号名称。Cookie不会通过管理API返回。</p><small>账号文件：data/accounts/*.json<br>API密钥：data/settings.json → api_key<br>运行日志：data/server.log<br><br>配置仅在服务停止时可保存；下次启动生效。进程启动不等于上游连通或生成成功。</small></section></div>
+<footer>Unofficial community project · Not affiliated with Google. AGPL-3.0.<br>反馈 / Feedback: <a href="mailto:parichu1dao@gmail.com">parichu1dao@gmail.com</a></footer></main>
+<script>
+const $=id=>document.getElementById(id);let connected=false;
+async function api(path,body){const r=await fetch('/api/'+path,{method:body===undefined?'GET':'POST',headers:{'X-Management-Key':$('key').value,'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error||r.status);return d}
+function render(d,config=false){$('status').textContent=d.running?'进程运行中 / Running':'已停止 / Stopped';$('endpoint').textContent='http://127.0.0.1:'+d.port+'/v1';$('accounts').textContent=d.accounts.join(' · ')||'暂无账号 / No accounts';if(config){$('strict').checked=d.strict_pro;$('model').value=d.model;$('port').value=d.port;$('proxy').value=d.proxy}}
+async function action(fn){try{await fn();$('notice').textContent='完成 / Done'}catch(e){$('notice').textContent=e.message}}
+$('connect').onclick=()=>action(async()=>{render(await api('status'),true);connected=true});
+$('save').onclick=()=>action(async()=>render(await api('config',{strict_pro:$('strict').checked,model:$('model').value,port:Number($('port').value),proxy:$('proxy').value.trim()}),true));
+for(const name of ['start','stop'])$(name).onclick=()=>{if(name==='stop'&&!confirm('停止会中断正在执行的请求。继续？ / Stop active requests?'))return;action(async()=>render(await api(name,{})))};
+$('strict').onchange=()=>{if($('strict').checked)$('model').value='gemini-3-pro'};
+setInterval(async()=>{if(connected){try{render(await api('status'))}catch(e){$('status').textContent='连接中断 / Disconnected'}}},4000);
+</script></html>
