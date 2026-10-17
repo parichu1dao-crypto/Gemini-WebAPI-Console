@@ -11,6 +11,9 @@
 - Browser transient failures distinguished from identity mismatch; unknown replies
   remain protected against blind resubmission. Same-tab conversation reuse.
 - Public issue templates, Windows/Linux CI, release-file privacy checks.
+- Bilingual release tour, illustrated dashboard documentation and explicit
+  Cookie-to-browser recovery steps. Image generation added to the roadmap,
+  not advertised as an available feature.
 - Text-only preview: image API disabled. No promise of upstream availability,
   exact browser token counts, or cryptographic verification of model identity.
 

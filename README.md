@@ -16,6 +16,42 @@ and understand usage without mixing your credentials with someone else's service
 
 ## What is inside?
 
+### Cookie first. A browser path when you need it.
+
+If Cookie generation fails while the same account still works on the Gemini
+website, open its dedicated browser, verify the identity and select **Managed
+browser** in Settings. Continue through the browser API without rebuilding your
+client integration. Change the base URL from `8787/v1` to `8791/v1` for this mode.
+This is an **explicit operator-controlled fallback**, not automatic resubmission.
+Reconcile requests with unknown outcomes before switching or retrying.
+
+**New-generation models, including Gemini 4 Argon:** refresh the model catalog
+and choose the model available to your account. Both transports retain requested
+model checks; an unavailable model is not silently replaced with Flash. Names,
+eligibility and availability depend on upstream rollout, not this console.
+
+## A look inside
+
+Real dashboard screenshots with synthetic demonstration data, not measured
+production performance. No real accounts or credentials are shown.
+
+![English usage dashboard](docs/images/overview-en.png)
+
+<details>
+<summary>Account management: enroll, verify, enable, rename and delete</summary>
+
+![English account management](docs/images/accounts-en.png)
+
+</details>
+
+## What changed in 0.2?
+
+This release turns the earlier gateway into a standalone local application:
+installation and startup, account lifecycle, browser fallback, per-request
+observability, safer error handling and operations are now documented together.
+See the [bilingual release tour](docs/RELEASE_0_2.md) for the complete change list
+and the [Cookie → browser recovery guide](docs/BROWSER_FALLBACK.md) for exact steps.
+
 | Capability | What you get |
 |---|---|
 | Accounts | Dedicated login windows, identity verification, rename, enable/disable and deletion |
@@ -75,6 +111,12 @@ this preview API.** Cookie calls can fail while the webpage still works; browser
 automation can break when the upstream UI changes. See [release scope](docs/RELEASE_SCOPE.md).
 
 ## Help shape the next release
+
+**Next: image generation.** Planned work includes image-capability discovery,
+image request/result handling, downloads and clear error reporting. This is a
+roadmap item, **not an available feature in 0.2**. It will ship only after
+end-to-end verification; no release date is promised. We also plan broader
+new-model regression coverage and clearer recovery diagnostics.
 
 Found a new error? Open a [bug report](https://github.com/parichu1dao-crypto/Gemini-WebAPI-Console/issues/new/choose)
 or email [parichu1dao@gmail.com](mailto:parichu1dao@gmail.com).

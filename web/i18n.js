@@ -1,6 +1,7 @@
 /* UI-only translations; account identifiers, model IDs, log evidence and form values stay unchanged. */
 (() => {
 const words = {
+'运维与安全 / Operations':'Operations & Security',
 '错误与帮助':'Errors & Help',
 '删除账号':'Delete account','账号名称':'Account name','确认删除':'Confirm deletion','账号已删除，历史记录已保留':'Account deleted; history preserved',
 '已核对账号身份并打开浏览器':'Identity verified; account browser opened','已打开独立登录窗口，请核对账号':'Dedicated login window opened; check the account',
