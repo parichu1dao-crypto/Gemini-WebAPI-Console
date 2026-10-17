@@ -73,7 +73,7 @@ class ActivityTests(unittest.TestCase):
         with patch('account_manager.Path.is_file',return_value=True),patch('account_manager.subprocess.Popen') as spawn:
             accounts.open(row['id'])
             args=spawn.call_args.args[0]
-            self.assertIn('--user-data-dir='+row['profile'],args)
+            self.assertIn('--user-data-dir='+str(Path(row['profile']).resolve()),args)
             self.assertIn('--remote-debugging-address=127.0.0.1',args)
             self.assertNotIn('shell',spawn.call_args.kwargs)
 
