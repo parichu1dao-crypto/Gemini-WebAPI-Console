@@ -276,7 +276,10 @@ class AsyncTests(Offline, unittest.IsolatedAsyncioTestCase):
             result = await server.create_chat_completion_chunks({'messages': [{'content': 'test'}]})
         self.assertEqual(len(sent), 1)
         self.assertIs(sent[0]['model'], model)
-        self.assertTrue(0 < sent[0]['timeout'] <= .2)
+        # A coarse monotonic tick may not advance during setup; subtraction
+        # can round the original 0.2s budget upward by floating-point epsilon.
+        self.assertGreater(sent[0]['timeout'], 0)
+        self.assertLessEqual(sent[0]['timeout'], .2 + 1e-6)
         self.assertEqual(result[-1]['choices'][0]['finish_reason'], 'stop')
 
 
