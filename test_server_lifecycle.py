@@ -243,7 +243,9 @@ class AsyncTests(Offline, unittest.IsolatedAsyncioTestCase):
 
     async def test_dispatched_deadline_is_uncertain_and_accounted_under_lock(self):
         from gemini_webapi.request_diagnostics import emit
-        self.state.args.request_timeout = .03
+        # Leave admission time on slower Windows CI; test post-dispatch expiry,
+        # not whether disk/lock setup can finish in thirty milliseconds.
+        self.state.args.request_timeout = 1.0
         async def send(*_, **kw):
             emit('generation_dispatched', transport='cookie')
             await asyncio.sleep(60)
