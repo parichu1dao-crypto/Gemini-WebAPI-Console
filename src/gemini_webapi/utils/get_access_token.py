@@ -1,4 +1,5 @@
 import re
+from copy import copy
 import time
 
 from curl_cffi.requests import AsyncSession, Cookies, Response
@@ -41,6 +42,7 @@ async def get_access_token(
     proxy: str | None = None,
     verbose: bool = False,
     verify: bool = True,
+    supplied_cookies_only: bool = False,
 ) -> tuple[str | None, str | None, str | None, str | None, str | None, AsyncSession]:
     """
     Send a get request to gemini.google.com for each group of available cookies and return
@@ -59,6 +61,9 @@ async def get_access_token(
         If True, log more details.
     verify: `bool`, optional
         Whether to verify SSL certificates.
+    supplied_cookies_only: `bool`, optional
+        Do not load shared caches, discover browser cookies, or merge anonymous
+        preflight cookies. Missing supplied authentication fails closed.
 
     Returns
     -------
@@ -71,13 +76,19 @@ async def get_access_token(
         If all requests failed.
     """
 
+    if supplied_cookies_only:
+        psid = (_extract_cookie_value(base_cookies, "__Secure-1PSID")
+                if isinstance(base_cookies, Cookies) else base_cookies.get("__Secure-1PSID"))
+        if not psid:
+            raise AuthError("Supplied cookies must contain __Secure-1PSID")
+
     client = AsyncSession(
         impersonate="chrome", proxy=proxy, allow_redirects=True, verify=verify
     )
 
     try:
-        response = await client.get(Endpoint.GOOGLE)
-        if verbose:
+        response = None if supplied_cookies_only else await client.get(Endpoint.GOOGLE)
+        if verbose and response is not None:
             logger.debug(
                 f"HTTP Request: GET {Endpoint.GOOGLE} [{response.status_code}]"
             )
@@ -87,7 +98,7 @@ async def get_access_token(
         raise
 
     extra_cookies = Cookies()
-    if response.status_code == 200:
+    if response is not None and response.status_code == 200:
         extra_cookies = preflight_cookies
 
     # Phase 1: Prepare Cache
@@ -101,7 +112,7 @@ async def get_access_token(
         base_psid = base_cookies.get("__Secure-1PSID")
         base_psidts = base_cookies.get("__Secure-1PSIDTS")
 
-    if base_psid:
+    if base_psid and not supplied_cookies_only:
         jar = Cookies()
         jar.set("__Secure-1PSID", base_psid, domain=".google.com")
         cache_file = _get_cookies_cache_path(jar)
@@ -149,7 +160,7 @@ async def get_access_token(
         elif verbose:
             logger.debug("Skipping loading cached cookies. Cache file not found.")
 
-    if not base_psid:
+    if not base_psid and not supplied_cookies_only:
         cache_files = list(_get_cookie_cache_dir().glob(".cached_cookies_*.json"))
         if cache_files:
             cache_file = max(cache_files, key=lambda p: p.stat().st_mtime)
@@ -186,12 +197,7 @@ async def get_access_token(
             if isinstance(base_cookies, Cookies):
                 for cookie in base_cookies.jar:
                     if not cookie.is_expired():
-                        jar.set(
-                            cookie.name,
-                            cookie.value,
-                            domain=cookie.domain,
-                            path=cookie.path,
-                        )
+                        jar.jar.set_cookie(copy(cookie))
             else:
                 for name, value in base_cookies.items():
                     if value:
@@ -207,7 +213,7 @@ async def get_access_token(
 
     # Phase 3: Browser Cookies
     try:
-        browser_cookies = load_browser_cookies(
+        browser_cookies = {} if supplied_cookies_only else load_browser_cookies(
             domain_name="google.com", verbose=verbose
         )
         if browser_cookies:

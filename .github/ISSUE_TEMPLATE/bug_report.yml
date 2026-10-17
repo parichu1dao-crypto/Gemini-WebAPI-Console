@@ -1,0 +1,27 @@
+name: Bug report / 错误反馈
+description: Report a reproducible problem without sharing credentials.
+body:
+  - type: markdown
+    attributes:
+      value: 'Do not upload data/, cookies, keys, browser profiles or chapter text. 请先脱敏。'
+  - type: input
+    id: version
+    attributes:
+      label: Version and OS / 版本与系统
+    validations:
+      required: true
+  - type: dropdown
+    id: transport
+    attributes:
+      label: Transport / 通道
+      options: [Cookie, Managed browser, External browser service, Unknown]
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps, expected result and actual result / 复现步骤与结果
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Redacted error and submission status / 脱敏错误与提交状态

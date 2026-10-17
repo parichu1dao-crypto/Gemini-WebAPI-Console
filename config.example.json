@@ -1,0 +1,29 @@
+{
+  "host": "127.0.0.1",
+  "port": 8787,
+  "transport": "cookie",
+  "proxy": null,
+  "ignore_proxy": false,
+  "account_dir": "accounts",
+  "accounts": "all",
+  "model": "gemini-3-pro",
+  "strict_pro": true,
+  "allow_free_pro": false,
+  "skip_verify": false,
+  "auto_refresh": false,
+  "init_timeout": 60,
+  "request_timeout": 300,
+  "queue_timeout": 2,
+  "account_failure_threshold": 1,
+  "account_cooldown": 900,
+  "quiet": false,
+  "proxy_wait_seconds": 60,
+  "proxy_poll_interval": 1,
+  "proxy_connect_timeout": 1,
+  "retry": {
+    "attempts": 3,
+    "initial_seconds": 1,
+    "max_seconds": 8
+  },
+  "api_key": null
+}

@@ -1,84 +1,86 @@
 # Gemini WebAPI Console
 
-![Gemini WebAPI Console — 本机管理与可选 Pro 校验](web/banner.svg)
+![Gemini WebAPI Console](web/banner.svg)
 
-### 网页会话，本地接口。让每一次请求都有迹可循。
+### 你的会话，你的控制台。让每次请求都有迹可循。
 
-[English](README.md) · [安全说明](SECURITY.md) · [开源许可证](LICENSE)
+[English](README.md) · [快速开始](docs/QUICKSTART.md) · [已知限制](docs/RELEASE_SCOPE.md) · [更新记录](CHANGELOG.md)
 
-基于 Gemini 网页客户端的自托管控制台：**OpenAI 兼容接口、账号池、可选的严格 Pro 校验**，同时提供网页管理界面与 Windows 启动器。
+**0.2.0 公开测试版：面向个人部署的 Gemini 账号与调用管理台。**
+把登录、模型选择、调用记录、限额保护和错误诊断集中在一起，而不是遇到失败只会不停重试。
 
-不是只会不断重试的黑盒，而是让你看清请求在哪里排队、在哪里中断、恢复是否成功。
+> 独立社区项目，非 Google 官方产品或官方 API。账号权限、额度及上游服务限制仍然适用。
+> 本版用于收集反馈，不承诺生产 SLA，也不是多租户云服务。
 
-> 基于 [HanaokaYuzu/Gemini-API](https://github.com/HanaokaYuzu/Gemini-API) 的社区衍生项目，非 Google 官方产品。依赖网页服务的可用性、账号授权和额度，不提供无限额度或绕过权限的能力。
+## 能做什么？
 
-## 做了哪些优化？
+| 功能 | 说明 |
+|---|---|
+| 账号管理 | 独立登录窗口、身份验证、重命名、启停和删除 |
+| 双通道文本调用 | Cookie API 与托管网页；明确选择，不偷偷切换 |
+| 模型选择 | 读取可用模型、检查请求模型，不静默降级 Flash |
+| 使用统计 | 按账号及日/周/月/自选时间查看；区分真实报告与估算 Token |
+| 安全恢复 | 排队准入、超时边界、未知提交保护、Cookie 请求去重 |
+| 运维工具 | 调用密钥、模型权限、审计事件、诊断与排空控制 |
+| 两种界面 | 双语网页管理台及 Windows 启动器 |
 
-| 优化 | 价值 |
-| --- | --- |
-| 网页控制台 + Windows 启动器 | 两处都可切换严格 Pro 校验，共享同一配置 |
-| 严格 Pro 默认开启 | 按后端可获得的模型信息与账号资格检查，用户可自行关闭 |
-| 单账号请求串行化 | 同账号排队，减少请求相互干扰；不同账号可并行 |
-| 请求全生命周期诊断 | 记录排队、取消、流式结束和恢复过程，便于定位故障 |
-| 超时取消与有条件恢复 | 取消超时工作，限制不满足条件的对话恢复 |
-| 独立配置与随机密钥 | 不附带个人账号、Cookie、浏览器档案或生产配置 |
+**严格 Pro 默认开启。** Cookie 校验依赖上游元数据，不是模型身份的独立证明。
+托管网页尚不能核验付费 Pro 资格，启用该通道需管理员明确调整额外校验策略；
+不能把“网页出现 Pro 菜单”当成付费授权证明，也不允许静默换模型。
 
-**严格校验不等于模型身份的独立证明。** 它依赖上游返回的元数据，不能证明 Google 实际运行的底层权重。关闭校验只会放宽检查，不会解锁 Pro、增加额度，也不保证始终使用指定模型。
+## 安装与启动
 
-## Windows 快速开始
-
-安装 Python 3.10 或更新版本（需包含 Tkinter），在项目目录运行：
+需要 Python **3.11+**。Windows 在项目目录运行：
 
 ```powershell
-py -3 -m venv .venv
-.venv\Scripts\python.exe -m pip install -r requirements.txt
-.venv\Scripts\python.exe launcher.py
+powershell -ExecutionPolicy Bypass -File .\Install-Windows.ps1
+.\Start-Windows.bat
 ```
 
-以后双击 **Start-Windows.bat**。启动器会启动本地管理服务；关闭启动器窗口不会自动关闭管理服务。点击 **Stop** 停止它管理的 API 工作进程，正在执行的请求会被中断。
+命令行方式：
 
-只使用网页界面，可运行 `.venv\Scripts\python.exe console.py`，然后打开 **http://127.0.0.1:8790/**。
-
-首次运行生成 `data/settings.json`：`admin_key` 用于登录控制台，`api_key` 用于请求接口，两者不同，均不可公开。
-
-### 导入账号
-
-每个账号的 Cookie 导出保存为 `data/accounts/<账号名>.json`，仅使用你拥有或获授权的账号。结构如下：
-
-```json
-{"cookies": [{"domain": ".google.com", "name": "__Secure-1PSID", "value": "替换为你的私密Cookie"}]}
+```bash
+python -m pip install -r requirements.txt
+python app.py init
+python app.py doctor
+python app.py console
 ```
 
-如果有当前有效的 `__Secure-1PSIDTS`，一并加入 cookies 数组。浏览器档案目录不能直接当作 Cookie JSON。存在账号文件不代表会话有效，须观察启动后的初始化日志。不要将真实 Cookie 发给维护者或提交仓库。
+管理地址：**http://127.0.0.1:8791/**。首次运行随机生成独立管理密码和 API 密钥，
+保存在私有 `data/settings.json`；不附带任何用户账号，不修改其他软件的代理。
 
-### 切换校验策略
+- Cookie 接口：运行 `python app.py api`，默认 **8787/v1**。
+- 托管网页接口：在管理台录入、验证并启用账号，选择 managed 通道并启动 API，使用 **8791/v1**。
+- 网页通道需要已登录的专用浏览器保持运行，不要关闭对应标签页。
+- 外部网页服务只是兼容选项，不要求用户另找翻译项目或个人脚本。
 
-1. 先停止 API 服务。
-2. 在网页或 Windows 启动器勾选/取消 **Strict Pro**，保存。
-3. 启动 API，检查 `data/server.log` 中的账号初始化结果。
+账号录入、接口示例、代理和升级方法见 **[快速开始](docs/QUICKSTART.md)**。
 
-默认接口地址为 `http://127.0.0.1:8787/v1`。界面显示进程运行不等于已通过真实生成测试。模型选项是当前客户端的映射，并非 Google 官方实时模型目录。请求示例见 [英文说明](README.md#api-example)。
+## 不掩盖故障，也不夸大能力
 
-代理可填写 `http://127.0.0.1:7890` 等本机实际地址；先启动 VPN，再启动服务。留空会向客户端传入忽略代理参数，但不保证绕过所有依赖或操作系统的网络配置。本项目不会修改其他软件代理，也不会自动安装开机计划任务。
+网络超时、TLS 错误、页面身份信息尚未加载，不等于账号失效。发送前故障应短暂退避；
+明确身份不符、真实限额和“已提交但结果未知”分别处理。未知请求不能盲目重发或删除保护标记。
 
-## 遇到错误时
+网页 Token 可能只是估算；请求成功不等于正文审核通过。**本测试版 API 不支持生图。**
+Cookie 通道仍可能在网页正常时失败，网页自动化也可能受 UI 更新影响。
+请先阅读 [发布范围与限制](docs/RELEASE_SCOPE.md)。
 
-- 登录失效：重新登录并更新自己的 Cookie。
-- 连接被拒绝：检查服务是否启动、代理端口是否正确。
-- 额度或权限错误：在官方网页核实可用模型与剩余额度，不能只看订阅名称。
-- 响应中断：查看根目录下 `openai_request_diagnostics.jsonl`、`openai_account_attempts.jsonl` 和 `data/server.log`。
-- 运行中不允许修改设置：先停止、保存，再启动，避免新策略干扰在途任务。
+## 一起把它做好
 
-分享日志前应删除账号标识、正文与所有密钥。离线回归测试命令：`python -m unittest discover -v`，通过不代表线上账号一定可用。
+欢迎提交 [Issue](https://github.com/parichu1dao-crypto/Gemini-WebAPI-Console/issues/new/choose)，
+或联系 **[parichu1dao@gmail.com](mailto:parichu1dao@gmail.com)**。
+请附版本、系统、通道、脱敏错误及是否已经提交；不要发送 Cookie、密码、密钥、浏览器目录、数据库或正文。
 
-## Gemini 4 适配承诺
+我们会优先推进 Gemini 4 及后续新模型在上游具备可验证条件时的适配，不承诺尚未验证的发布日期或无限额度。
+如果项目对你有用，欢迎 Star；准确的故障反馈同样重要。
 
-**我们承诺：上游网页服务开放 Gemini 4 且具备可验证的接入条件后，将优先推进适配，尽快发布兼容版本。** 这是后续维护计划，不表示当前已支持 Gemini 4，也不承诺尚无法验证的发布日期；实际适配取决于上游权限、协议与测试结果。
+## 开发与来源
 
-## 一起改进
+```bash
+python -m unittest discover -p "test_*.py" -q
+python tools/release_check.py
+```
 
-欢迎提交 Issue、改进建议或可复现的故障报告。反馈邮箱：**[parichu1dao@gmail.com](mailto:parichu1dao@gmail.com)**。请附版本、系统、脱敏报错与复现步骤，勿发送登录凭据或私人聊天记录。如果它帮到了你，欢迎 Star，让更多人找到这个项目。
-
-## 开源与致谢
-
-使用 **GNU AGPL v3**，保留上游许可证；来源与修改范围见 [ATTRIBUTION.md](ATTRIBUTION.md)。对外提供修改后的网络服务时，请遵守相应源码提供义务。请遵守上游服务条款，不绕过账号限制。
+CI 只做离线测试，不登录 Google、不消耗账号生成额度。
+保留 [HanaokaYuzu/Gemini-API](https://github.com/HanaokaYuzu/Gemini-API) 来源和 **GNU AGPL v3** 许可证。
+详见 [贡献指南](CONTRIBUTING.md)、[安全说明](SECURITY.md)、[来源说明](ATTRIBUTION.md) 和 [LICENSE](LICENSE)。
