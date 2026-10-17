@@ -114,6 +114,7 @@ class GeminiClient(ChatMixin, GemMixin, ResearchMixin):
         "verbose",
         "_running",
         "_cookies",
+        "_supplied_cookies_only",
         "_reqid",
         "_model_registry",
         "_lock",
@@ -149,6 +150,7 @@ class GeminiClient(ChatMixin, GemMixin, ResearchMixin):
         self.verbose: bool = False
         self._running: bool = False
         self._cookies = Cookies()
+        self._supplied_cookies_only = False
         self._reqid: int = random.randint(10000, 99999)
         self._model_registry: dict[str, AvailableModel] = {}
         self._lock = asyncio.Lock()
@@ -193,6 +195,7 @@ class GeminiClient(ChatMixin, GemMixin, ResearchMixin):
         refresh_interval: float = 600,
         watchdog_timeout: float = 120,
         verbose: bool = False,
+        supplied_cookies_only: bool = False,
     ) -> None:
         """
         Get SNlM0e value as access token. Without this token posting will fail with 400 bad request.
@@ -216,6 +219,9 @@ class GeminiClient(ChatMixin, GemMixin, ResearchMixin):
             client will retry automatically after this duration.
         verbose: `bool`, optional
             If `True`, will print more infomation in logs.
+        supplied_cookies_only: `bool`, optional
+            Use only this client's cookies. Disables shared cookie cache writes and
+            cache-backed automatic refresh; isolation persists across reinitialization.
         """
 
         async with self._lock:
@@ -224,6 +230,7 @@ class GeminiClient(ChatMixin, GemMixin, ResearchMixin):
 
             try:
                 self.verbose = verbose
+                self._supplied_cookies_only = supplied_cookies_only or self._supplied_cookies_only
                 self.watchdog_timeout = watchdog_timeout
                 (
                     access_token,
@@ -237,6 +244,7 @@ class GeminiClient(ChatMixin, GemMixin, ResearchMixin):
                     proxy=self.proxy,
                     verbose=self.verbose,
                     verify=self.kwargs.get("verify", True),
+                    supplied_cookies_only=self._supplied_cookies_only,
                 )
 
                 session.timeout = timeout
@@ -256,7 +264,7 @@ class GeminiClient(ChatMixin, GemMixin, ResearchMixin):
                 if self.auto_close:
                     await self.reset_close_task()
 
-                self.auto_refresh = auto_refresh
+                self.auto_refresh = auto_refresh and not self._supplied_cookies_only
                 self.refresh_interval = refresh_interval
 
                 if self.refresh_task:
@@ -302,7 +310,8 @@ class GeminiClient(ChatMixin, GemMixin, ResearchMixin):
             self.client = None
 
         try:
-            save_cookies(self._cookies, self.verbose)
+            if not self._supplied_cookies_only:
+                save_cookies(self._cookies, self.verbose)
         except OSError as e:
             logger.warning(f"Failed to save cookies to cache file: {e}")
 
@@ -896,6 +905,7 @@ class GeminiClient(ChatMixin, GemMixin, ResearchMixin):
                     data=request_data,
                     **kwargs,
                 ) as response:
+                    emit('upstream_headers', http_status=response.status_code)
                     if self.verbose:
                         logger.debug(
                             f"HTTP Request: POST {Endpoint.GENERATE} [{response.status_code}]"
@@ -953,10 +963,12 @@ class GeminiClient(ChatMixin, GemMixin, ResearchMixin):
                                             "Please try using a proxy, a different network, or wait for a while before retrying."
                                         )
                                     case ErrorCode.TEMPORARY_ERROR_1013:
+                                        emit('upstream_rpc_error', code=1013)
                                         raise APIError(
                                             "Gemini encountered a temporary error (1013). Retrying..."
                                         )
                                     case _:
+                                        emit('upstream_rpc_error', code=str(error_code)[:40])
                                         raise APIError(
                                             f"Failed to generate contents (stream). Unknown API error code: {error_code}. "
                                             "This might be a temporary Google service issue."
@@ -1174,6 +1186,7 @@ class GeminiClient(ChatMixin, GemMixin, ResearchMixin):
 
                                             output_candidates.append(
                                                 Candidate(
+                                                    is_error_card=bool(CARD_CONTENT_RE.match(get_nested_value(candidate_data, [1, 0], ""))),
                                                     rcid=rcid,
                                                     text=text,
                                                     text_delta=text_delta,
@@ -1350,7 +1363,7 @@ class GeminiClient(ChatMixin, GemMixin, ResearchMixin):
                                  reason="missing_cid" if not cid else "missing_final_chunk")
                             logger.debug(
                                 f"Stream suspended (completed={is_completed}, final_chunk={is_final_chunk}, thinking={is_thinking}, queueing={is_queueing}). "
-                                f"No CID found to recover. (Request ID: {_reqid})"
+                                f"Recovery unavailable: {'missing CID' if not cid else 'missing final chunk'}. (Request ID: {_reqid})"
                             )
                             raise APIError(
                                 "The original request may have been silently aborted by Google."
