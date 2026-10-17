@@ -14,6 +14,43 @@ and understand usage without mixing your credentials with someone else's service
 > Upstream availability, account eligibility and limits still apply. This preview
 > is for public feedback, not an availability guarantee or a hosted multi-tenant service.
 
+## What is Gemini WebAPI Console?
+
+**Gemini WebAPI Console is an open-source, self-hosted application that connects
+your own Gemini web sessions to a manageable text-generation API.** It brings
+account login, model selection, request history, usage estimates and recovery
+controls into one bilingual dashboard, with a Windows launcher for local use.
+
+It is designed for developers connecting scripts or compatible chat clients,
+creators running translation and writing workflows, and operators who need to
+see which account handled a request and why it failed. Instead of maintaining
+separate login scripts and guessing whether a timeout consumed quota, you get
+account-level visibility and explicit recovery controls.
+
+### How it works
+
+Your client sends a request to the local API. The selected transport uses an
+eligible account's Gemini session and returns the generated text. The dashboard
+records the attempt, its timing, status and available usage information.
+
+| Path | Role | What must stay available |
+|---|---|---|
+| Cookie API | Background text generation using an authenticated session | Valid session cookies and network access; no open webpage required for each request |
+| Managed browser | An alternative when Cookie calls fail but the website still works | The account's dedicated, signed-in Chrome window and Gemini tab |
+| Dashboard | Account management, model settings, request records and diagnostics | The local console service |
+
+Switching paths is an administrator decision, not automatic replay of failed
+requests. It does not grant additional model access or bypass quotas. Available
+new-generation models, including Argon where exposed upstream, depend on the
+account and transport. This is **not the Google AI Studio/Vertex AI API**, an
+account marketplace or an unlimited-access service. Current APIs are text-only;
+image generation is on the roadmap.
+
+**First run:** install → start the console → enroll and verify an account →
+choose a transport and model → test one short request → connect your workflow.
+Follow the [step-by-step setup](docs/QUICKSTART.md) and
+[browser fallback guide](docs/BROWSER_FALLBACK.md).
+
 ## What is inside?
 
 ### Cookie first. A browser path when you need it.
