@@ -17,7 +17,7 @@ class HTTPTests(unittest.TestCase):
     def setUp(self):
         self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup)
         self.patches=[]
-        def fake_run(coro):
+        def fake_run(coro, timeout=None):
             coro.close()
             return {'id':'synthetic','model':'gemini-3-pro','choices':[{'message':{'content':'OK'}}]}
         state=SimpleNamespace(args=SimpleNamespace(api_key='master',default_model='gemini-3-pro',strict_pro=False,quiet=True,request_timeout=480),

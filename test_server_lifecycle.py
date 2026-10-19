@@ -66,11 +66,11 @@ class AsyncTests(Offline, unittest.IsolatedAsyncioTestCase):
         finally:
             server.REQUEST_BUDGET.reset(token)
 
-    async def test_each_turn_reinitializes_account_session_before_resolution(self):
+    async def test_each_turn_preserves_authenticated_session_before_resolution(self):
         client = SimpleNamespace(_running=True, client=object(), cookies=object(),
                                  _fetch_user_status=AsyncMock(), account_status=server.AccountStatus.AVAILABLE)
         self.state._session_checked_at['a'] = time.monotonic() - 601
-        self.state._credential_versions['a'] = 'old'
+        self.state._credential_versions['a'] = server.session_version('a', self.root)
         async def close():
             client._running = False
         async def init(**kwargs):
@@ -83,8 +83,31 @@ class AsyncTests(Offline, unittest.IsolatedAsyncioTestCase):
             with patch('gemini_webapi.utils.rotate_1psidts.rotate_1psidts', new_callable=AsyncMock) as rotate, patch.object(server, 'save_account_session', return_value='new') as save, patch.object(server.CookieModelCatalog, 'from_client'):
                 await self.state.prepare_request_model('a', client, 'gemini-3-pro')
                 rotate.assert_not_awaited()
-                client.close.assert_awaited_once()
-                client.init.assert_awaited_once()
+                client.close.assert_not_awaited()
+                client.init.assert_not_awaited()
+                client._fetch_user_status.assert_awaited_once()
+        finally:
+            server.REQUEST_BUDGET.reset(token)
+
+    async def test_new_import_is_loaded_before_init_without_browser_generation(self):
+        self.state._credential_versions['a'] = 'previous-version'
+        jar = object()
+        client = SimpleNamespace(_running=True, cookies=object(), account_status=server.AccountStatus.AVAILABLE)
+        async def close():
+            client._running = False
+        async def init(**kwargs):
+            self.assertIs(client.cookies, jar)
+            self.assertTrue(kwargs['supplied_cookies_only'])
+            client._running = True
+        client.close = AsyncMock(side_effect=close)
+        client.init = AsyncMock(side_effect=init)
+        token = server.REQUEST_BUDGET.set(server.RequestBudget(10))
+        try:
+            with patch.object(server, 'load_account_cookie_session', return_value=(jar, None)), patch.object(server.CookieModelCatalog, 'from_client'):
+                await self.state.prepare_request_model('a', client, 'gemini-3-pro')
+            client.close.assert_awaited_once()
+            client.init.assert_awaited_once()
+            self.assertEqual(self.state._credential_versions['a'], server.session_version('a', self.root))
         finally:
             server.REQUEST_BUDGET.reset(token)
 
@@ -243,9 +266,7 @@ class AsyncTests(Offline, unittest.IsolatedAsyncioTestCase):
 
     async def test_dispatched_deadline_is_uncertain_and_accounted_under_lock(self):
         from gemini_webapi.request_diagnostics import emit
-        # Leave admission time on slower Windows CI; test post-dispatch expiry,
-        # not whether disk/lock setup can finish in thirty milliseconds.
-        self.state.args.request_timeout = 1.0
+        self.state.args.request_timeout = .03
         async def send(*_, **kw):
             emit('generation_dispatched', transport='cookie')
             await asyncio.sleep(60)
@@ -276,10 +297,7 @@ class AsyncTests(Offline, unittest.IsolatedAsyncioTestCase):
             result = await server.create_chat_completion_chunks({'messages': [{'content': 'test'}]})
         self.assertEqual(len(sent), 1)
         self.assertIs(sent[0]['model'], model)
-        # A coarse monotonic tick may not advance during setup; subtraction
-        # can round the original 0.2s budget upward by floating-point epsilon.
-        self.assertGreater(sent[0]['timeout'], 0)
-        self.assertLessEqual(sent[0]['timeout'], .2 + 1e-6)
+        self.assertTrue(0 < sent[0]['timeout'] <= .2)
         self.assertEqual(result[-1]['choices'][0]['finish_reason'], 'stop')
 
 
@@ -445,11 +463,13 @@ class HandlerTests(Offline):
             payload = {'messages': [{'content': 'synthetic'}], 'stream': stream}
             result = [{'chunk': 'synthetic'}] if stream else {'answer': 'synthetic'}
             calls = []
-            def run(coro):
+            def run(coro, timeout=None):
                 coro.close()  # Never execute generation; exercise only ledger/handler wiring.
+                self.assertEqual(timeout, 60)
                 calls.append(True)
                 return result
             handler = self.handler(payload)
+            handler.headers['X-Request-Timeout-Seconds'] = '90'
             state = SimpleNamespace(clients=[('a', object())], run_async=run,args=SimpleNamespace(api_key='test',request_timeout=480))
             with patch.object(request_ledger, 'DATABASE', self.root / f'ledger_{stream}.sqlite3'), \
                  patch.object(server, 'STATE', state):
