@@ -30,6 +30,7 @@ DEFAULTS = {
     "proxy_connect_timeout": 1.0, "startup_attempts": 3,
     "startup_backoff_initial": 1.0, "startup_backoff_max": 8.0,
     "api_key": None,
+    "cookie_protocol": "legacy",
 }
 
 
@@ -120,6 +121,8 @@ def load_config(path):
     if set(raw) - set(DEFAULTS):
         raise ConfigError("Configuration must be an object containing only documented fields.")
     config = {**DEFAULTS, **raw}
+    if config['cookie_protocol'] not in ('legacy', 'process-session'):
+        raise ConfigError('cookie_protocol must be legacy or process-session.')
     if config["proxy"] == "":
         config["proxy"] = None  # Existing console settings use an empty string.
     for name in ("strict_pro", "allow_free_pro", "ignore_proxy", "skip_verify", "auto_refresh", "quiet"):
@@ -204,7 +207,7 @@ def key_environment(key):
 def server_argv(config):
     """In-process argv only. API keys never appear in argv or subprocesses."""
     names = ("host", "port", "accounts", "account_dir", "default_model", "init_timeout",
-             "request_timeout", "queue_timeout", "account_failure_threshold", "account_cooldown")
+             "request_timeout", "queue_timeout", "account_failure_threshold", "account_cooldown", "cookie_protocol")
     argv = [f"--{name.replace('_', '-')}={config[name]}" for name in names]
     argv.append("--strict-pro" if config["strict_pro"] else "--allow-non-pro")
     for name in ("allow_free_pro", "ignore_proxy", "skip_verify", "auto_refresh", "quiet"):

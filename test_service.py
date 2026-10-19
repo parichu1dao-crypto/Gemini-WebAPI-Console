@@ -35,7 +35,7 @@ class FakeServer:
         parser = argparse.ArgumentParser()
         for name in ("host", "port", "accounts", "account-dir", "default-model", "proxy",
                      "init-timeout", "request-timeout", "queue-timeout",
-                     "account-failure-threshold", "account-cooldown"):
+                     "account-failure-threshold", "account-cooldown", "cookie-protocol"):
             parser.add_argument("--" + name)
         parser.add_argument("--api-key", default=os.environ.get(service.KEY_ENV, ""))
         parser.add_argument("--strict-pro", dest="strict_pro", action="store_true")

@@ -6,7 +6,7 @@
 
 [简体中文](README_CN.md) · [Quick start](docs/QUICKSTART.md) · [Known limitations](docs/RELEASE_SCOPE.md) · [Changelog](CHANGELOG.md)
 
-**0.2.0 preview — a local-first control plane for your own Gemini accounts.**
+**Upcoming experimental 0.2.1 — draft PR, not a stable launch.**
 Manage dedicated browser sessions, expose text-generation APIs, inspect failures,
 and understand usage without mixing your credentials with someone else's service.
 
@@ -15,6 +15,16 @@ and understand usage without mixing your credentials with someone else's service
 > is for public feedback, not an availability guarantee or a hosted multi-tenant service.
 
 ## What is Gemini WebAPI Console?
+
+**Do NOT switch production based on this PR.** The adapter is implemented and
+224 offline tests pass, including fixes for length-prefixed ACKs and empty routing
+IDs. Earlier short lab requests passed on three accounts, but later integrated
+requests timed out without a response body. A 31,502-character input was actually
+submitted and timed out after 360 seconds without an answer. Long translation is
+**not validated**; this is not a claim of translation usability. The newest model
+has not been verified on the new protocol. A public draft PR is planned, not a
+merge or release; the baseline `legacy` default is retained.
+See [Cookie protocol and deployment](docs/COOKIE_PROTOCOL.md).
 
 **Gemini WebAPI Console is an open-source, self-hosted application that connects
 your own Gemini web sessions to a manageable text-generation API.** It brings
@@ -35,14 +45,16 @@ records the attempt, its timing, status and available usage information.
 
 | Path | Role | What must stay available |
 |---|---|---|
-| Cookie API | Background text generation using an authenticated session | Valid session cookies and network access; no open webpage required for each request |
+| Cookie API: `legacy` (default) | Existing Cookie HTTP generation | Valid cookies and network; no open webpage required per request, but upstream compatibility is not guaranteed |
+| Cookie API: `process-session` (opt-in preview) | Independent Cookie HTTP sends the `processSession` body | Enrolled, dedicated, signed-in browser for fresh validation and request-bundle preparation only; all browser generation POSTs are blocked |
 | Managed browser | An alternative when Cookie calls fail but the website still works | The account's dedicated, signed-in Chrome window and Gemini tab |
 | Dashboard | Account management, model settings, request records and diagnostics | The local console service |
 
 Switching paths is an administrator decision, not automatic replay of failed
 requests. It does not grant additional model access or bypass quotas. Available
-new-generation models, including Argon where exposed upstream, depend on the
-account and transport. This is **not the Google AI Studio/Vertex AI API**, an
+models depend on the account and transport. The new protocol accepts only its
+observed Pro model ID; all other models fail closed as `notSubmitted`. A catalog entry alone is
+not proof of protocol support. This is **not the Google AI Studio/Vertex AI API**, an
 account marketplace or an unlimited-access service. Current APIs are text-only;
 image generation is on the roadmap.
 
@@ -53,19 +65,18 @@ Follow the [step-by-step setup](docs/QUICKSTART.md) and
 
 ## What is inside?
 
-### Cookie first. A browser path when you need it.
+### Explicit protocol selection, no automatic replay
 
-If Cookie generation fails while the same account still works on the Gemini
-website, open its dedicated browser, verify the identity and select **Managed
-browser** in Settings. Continue through the browser API without rebuilding your
-client integration. Change the base URL from `8787/v1` to `8791/v1` for this mode.
-This is an **explicit operator-controlled fallback**, not automatic resubmission.
-Reconcile requests with unknown outcomes before switching or retrying.
+`cookie_protocol` accepts `legacy` (default) or `process-session` (explicit opt-in).
+The new path is Cookie HTTP, not managed-browser generation. It never automatically
+falls back to legacy or browser generation. Never retry an uncertain submission.
+The browser supplies fresh validation and a request bundle; the independent HTTP
+client submits the body. All browser generation POSTs remain blocked in this path.
 
-**New-generation models, including Gemini 4 Argon:** refresh the model catalog
-and choose the model available to your account. Both transports retain requested
-model checks; an unavailable model is not silently replaced with Flash. Names,
-eligibility and availability depend on upstream rollout, not this console.
+This experiment is **Cookie-only, with no fallback**. Managed-browser generation
+is a separate baseline feature, not a recovery path for this PR. Historical browser recovery guides do not override
+the new protocol's blocked browser generation POSTs or fail-closed model checks.
+There is no guaranteed latest-model support or silent Flash substitution.
 
 ## A look inside
 
@@ -83,7 +94,7 @@ production performance. No real accounts or credentials are shown.
 
 ## What changed in 0.2?
 
-This release turns the earlier gateway into a standalone local application:
+The existing 0.2 baseline turned the earlier gateway into a standalone local application:
 installation and startup, account lifecycle, browser fallback, per-request
 observability, safer error handling and operations are now documented together.
 See the [bilingual release tour](docs/RELEASE_0_2.md) for the complete change list
@@ -106,6 +117,11 @@ of paid authorization merely because a menu shows Pro. See the [mode guide](docs
 
 ## Start in minutes
 
+For isolated experimental testing only, follow the [protocol deployment guide](docs/COOKIE_PROTOCOL.md#deployment).
+Do not use this PR as a production upgrade recommendation.
+Preserve existing keys and enroll browser bindings through the existing account
+manager. Protocol selection is a configuration setting, not a new documented UI control.
+
 Install Python **3.11+**. On Windows:
 
 ```powershell
@@ -127,6 +143,7 @@ keys in private `data/settings.json`. No default shared password, no bundled
 accounts, and no changes to other applications' proxy settings.
 
 - Cookie API: `python app.py api`, default **8787/v1**.
+  `legacy` is the default; `process-session` additionally requires its enrolled browser.
 - Managed browser API: enroll/verify accounts, select managed mode and Start API,
   then use **8791/v1**. Keep its dedicated browser tabs open.
 - Existing external browser services are an advanced compatibility option, not
@@ -136,6 +153,15 @@ Full installation, account enrollment, API examples and upgrades:
 **[Quick start →](docs/QUICKSTART.md)**
 
 ## Understand the failure before retrying
+
+Observed upstream behavior has changed: earlier `StreamGenerate` lab requests
+failed even after startup authentication. This is not proof that Google removed
+the old protocol globally. A separate account returned an error card; an
+operator-imposed 12-hour cooldown is not proof of quota exhaustion.
+
+The client-facing HTTP API remains `/v1/chat/completions` with the same compatible
+request/response format. Initial streaming may buffer the answer until validated;
+this is not a promise of live upstream token streaming.
 
 Network interruptions and missing page controls are not proof of an invalid
 account. Pre-submit failures use short backoff. Explicit account identity mismatch,
@@ -160,9 +186,13 @@ or email [parichu1dao@gmail.com](mailto:parichu1dao@gmail.com).
 Include version, transport, OS, redacted error and whether submission occurred.
 **Never attach cookies, passwords, API keys, profiles, databases or private prompts.**
 
-Gemini 4/new-generation compatibility remains a priority as upstream support can
-be verified; displayed dynamic models depend on the account. No release date or
-unlimited-access promise is made. Useful reports and stars help prioritize work.
+New-model compatibility remains a priority, subject to verification. Displayed
+dynamic models do not establish support in the new protocol. Latest-model and
+long-text support are not guaranteed. Useful reports help prioritize work.
+
+Editor-inserted `U+200B` escapes are accepted **only immediately before Markdown
+list markers at line start**. Original captured payloads and proof remain unchanged;
+there is no broad normalization. See the protocol document for the evidence limits.
 
 ## Development and provenance
 
