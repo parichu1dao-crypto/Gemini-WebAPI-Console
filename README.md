@@ -1,5 +1,8 @@
 # Gemini WebAPI Console
 
+> **2026-10-25 update:** Cookie session recovery, Pro response checks, clearer
+> pre-submission errors and shared request deadlines. [Changes and upgrade guide](docs/UPDATE_20261025.md).
+
 ![Gemini WebAPI Console](web/banner.svg)
 
 ### Your sessions. Your controls. Every request accounted for.

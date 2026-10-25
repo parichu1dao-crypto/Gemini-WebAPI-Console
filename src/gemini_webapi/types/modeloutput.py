@@ -24,6 +24,8 @@ class ModelOutput(BaseModel):
     metadata: list[str]
     candidates: list[Candidate]
     chosen: int = 0
+    # Upstream generation metadata, never inferred from the requested model.
+    model_id: str | None = None
 
     def __str__(self) -> str:
         return shorten(self.text, width=100)

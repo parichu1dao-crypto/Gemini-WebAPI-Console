@@ -1,5 +1,7 @@
 """Explicit enrolled-profile session refresh; never opens or navigates a browser."""
 import json
+import socket
+from urllib.parse import urlsplit
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -26,5 +28,14 @@ def recover_session(name, account_dir):
     expected = normalize_email(stored.get('email', ''))
     if not expected or expected != normalize_email(enrolled.get('email', '')):
         raise ValueError('Enrolled browser identity does not match account')
+    from import_browser_session import validate_cdp_url
+    address = urlsplit(validate_cdp_url(enrolled['cdp_url']))
+    try:
+        with socket.create_connection((address.hostname, address.port), timeout=2):
+            pass
+    except OSError:
+        from gemini_webapi.request_diagnostics import emit
+        emit('session_reimport_unavailable', account=name, reason='enrolled_browser_offline')
+        return False
     import_session(name, enrolled['cdp_url'], expected, directory)
     return True

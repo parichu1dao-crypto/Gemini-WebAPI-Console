@@ -1,5 +1,8 @@
 # Gemini WebAPI Console
 
+> **2026-10-25 更新：** 改善 Cookie 会话恢复、Pro 响应校验、未提交错误分类与超时控制。
+> [查看中英文更新说明及升级步骤](docs/UPDATE_20261025.md)。
+
 ![Gemini WebAPI Console](web/banner.svg)
 
 ### 你的会话，你的控制台。让每次请求都有迹可循。

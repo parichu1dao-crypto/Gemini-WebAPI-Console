@@ -14,6 +14,22 @@ class SubmissionUncertain(RuntimeError):
 class UpstreamErrorCard(RuntimeError):
     """Google returned an explicit error card, not generated chapter content."""
 
+class ModelVerificationFailed(SubmissionUncertain):
+    """Do not accept unverified or downgraded Pro output, or automatically resend."""
+
+
+def verify_response_model(output, requested):
+    expected = getattr(requested, "model_id", None)
+    if expected != "e6fa609c3fa255c0":
+        return
+    actual = getattr(output, "model_id", None)
+    if actual != expected:
+        emit("response_model_rejected", expected_model_id=expected,
+             actual_model_id=actual if isinstance(actual, str) and len(actual) == 16 else None)
+        raise ModelVerificationFailed(
+            "Pro response model is missing or mismatched; output rejected; do not automatically retry")
+    emit("response_model_verified", model_id=actual, transport="cookie")
+
 
 @contextmanager
 def single_dispatch(client):
@@ -88,6 +104,7 @@ async def _generate_stream_once(client, prompt, *, files, model, timeout):
                 if candidates and getattr(candidates[chosen], 'is_error_card', False):
                     emit('upstream_error_card', transport='cookie')
                     raise UpstreamErrorCard('Google returned an error card; no usable generation received; no automatic resend')
+                verify_response_model(output, model)
                 if first and (getattr(output,'text',None) or getattr(output,'text_delta',None)):
                     emit('first_output')
                     first=False

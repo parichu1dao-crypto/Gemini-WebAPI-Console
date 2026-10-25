@@ -1206,6 +1206,8 @@ class GeminiClient(ChatMixin, GemMixin, ResearchMixin):
                                             yield ModelOutput(
                                                 metadata=[cid, rid],
                                                 candidates=output_candidates,
+                                                model_id=get_nested_value(part_json, [39])
+                                                if isinstance(get_nested_value(part_json, [39]), str) else None,
                                             )
                                 except json.JSONDecodeError:
                                     continue

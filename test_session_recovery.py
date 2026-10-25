@@ -17,9 +17,9 @@ class RecoveryTests(unittest.TestCase):
             mapping = root/'mapping.json'
             mapping.write_text(json.dumps({'a':{'email':'a@example.test','cdp_url':'http://127.0.0.1:9999'}}))
             (root/'data'/'integration.json').write_text(json.dumps({'browser_mapping':str(mapping)}))
-            with patch.object(recovery,'ROOT',root), patch('import_browser_session.import_session') as importer:
+            with patch.object(recovery,'ROOT',root), patch('import_browser_session.import_session') as importer, patch('session_recovery.socket.create_connection'):
                 self.assertTrue(recovery.recover_session('a',accounts))
-                importer.assert_called_once_with('a','http://127.0.0.1:9999','a@example.test',accounts.resolve())
+                importer.assert_called_once_with('a','http://127.0.0.1:9999','a@example.test',accounts)
                 importer.reset_mock()
                 mapping.write_text(json.dumps({'a':{'email':'other@example.test','cdp_url':'http://127.0.0.1:9999'}}))
                 with self.assertRaises(ValueError): recovery.recover_session('a',accounts)

@@ -8,10 +8,17 @@ from pathlib import Path
 from unittest.mock import patch
 
 import openai_compatible_server as server
-from cookie_transport import generate, SubmissionUncertain, UpstreamErrorCard
+from cookie_transport import generate, SubmissionUncertain, UpstreamErrorCard, verify_response_model, ModelVerificationFailed
 
 
 class TransportTests(unittest.IsolatedAsyncioTestCase):
+    def test_pro_requires_response_evidence_not_request_or_text(self):
+        requested = SimpleNamespace(model_id="e6fa609c3fa255c0")
+        for actual in (None, "", "cf41b0e0dd7d53e5"):
+            with self.assertRaises(ModelVerificationFailed):
+                verify_response_model(SimpleNamespace(model_id=actual, text="I am Pro"), requested)
+        verify_response_model(SimpleNamespace(model_id="e6fa609c3fa255c0"), requested)
+
     async def test_explicit_error_card_is_not_unknown_or_replayed(self):
         client, calls, original = self.client()
         async def run(*args, **kwargs):

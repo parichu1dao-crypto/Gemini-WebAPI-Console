@@ -136,15 +136,27 @@ class StrictProUnavailable(RuntimeError):
     """Raised when a request cannot be proven eligible for Gemini Pro."""
 
 
+class EmptyGeneration(RuntimeError):
+    """Completed request returned no usable text."""
+
+
+class UpstreamServiceMessage(RuntimeError):
+    """Known upstream error text; not a successful chapter."""
+
+
 def validate_generated_text(text: str) -> None:
     normalized = " ".join(text.split()).casefold().rstrip(".!。")
-    if not normalized or normalized in {
+    if not normalized:
+        emit('output_rejected', reason='empty_content', response_chars=len(text))
+        raise EmptyGeneration('Gemini returned empty content')
+    if normalized in {
         "i seem to be encountering an error. can i try something else for you?",
         "sorry, something went wrong. please try your request again",
         "i encountered an error doing what you asked. could you try again?",
         "i'm having a hard time fulfilling your request. can i help you with something else instead?",
     }:
-        raise RuntimeError("Gemini returned empty content or a service error message")
+        emit('output_rejected', reason='upstream_service_message', response_chars=len(text))
+        raise UpstreamServiceMessage('Gemini returned a recognized service error message')
 
 
 class ServerState:
@@ -228,8 +240,8 @@ class ServerState:
             recovered = await asyncio.to_thread(recover_session, account_name, self.account_dir)
             emit('session_reimported' if recovered else 'session_reimport_unavailable', account=account_name)
             return recovered
-        except Exception:
-            emit('session_reimport_failed', account=account_name)
+        except Exception as exc:
+            emit('session_reimport_failed', account=account_name, error_type=type(exc).__name__)
             return False
 
     async def initialize_client(self, account_name, *, allow_browser_recovery=True):
@@ -323,6 +335,8 @@ class ServerState:
             client.account_status = old_status
             # Snapshot permits future admission, never generation on this failure.
             raise
+        if client.account_status == AccountStatus.UNAUTHENTICATED:
+            await self.ensure_authenticated(account_name, client, REQUEST_BUDGET.get())
         eligible, reason, pro_model = self.strict_pro_eligibility(client)
         if not eligible:
             raise StrictProUnavailable(f"{account_name}: {reason}")
@@ -346,11 +360,19 @@ class ServerState:
 
     async def prepare_request_model(self, account_name, client, model_name):
         budget = REQUEST_BUDGET.get()
-        # Keep per-account cookies, but do not reuse an old page access token /
-        # TLS session across independent temporary conversations. This is a
-        # pre-dispatch handshake, never a second generation attempt.
-        if account_name in getattr(self, '_session_checked_at', {}) and getattr(client, '_running', False):
-            await client.close()
+        # Imports update the account file atomically. Adopt the new jar under
+        # this account's request lock, before any generation is submitted.
+        versions = getattr(self, '_credential_versions', {})
+        if account_name in versions:
+            current_version = session_version(account_name, self.account_dir)
+            if current_version != versions[account_name]:
+                cookies, _ = load_account_cookie_session(account_name, account_dir=self.account_dir)
+                await client.close()
+                client.cookies = cookies
+                versions[account_name] = current_version
+        # Preserve the authenticated HTTP session. Temporary conversations do
+        # not require tearing down authentication before every request.
+        # Reconnect only when closed or when an explicit import replaced cookies.
         reconnected = False
         if getattr(client, '_running', True) is False:
             await client.init(timeout=budget.remaining(), supplied_cookies_only=True,
@@ -448,7 +470,10 @@ class ServerState:
                     try:
                         CookieModelCatalog.from_client(client).resolve(model_name)
                     except ModelCatalogError:
-                        continue
+                        # Permit authentication recovery under the account lock.
+                        # This is admission to preflight, never permission to generate.
+                        if getattr(client, 'account_status', None) != AccountStatus.UNAUTHENTICATED:
+                            continue
                 if self.account_available(account_name):
                     self.next_index = index + 1
                     return account_name, client
@@ -471,7 +496,10 @@ class ServerState:
         quota_until = max(float(limits.get(k, {}).get('until') or 0) for k in (name, identity))
         if quota_until > now:
             until = max(until, quota_until)
-            reason = 'quota_limit'
+            reason = ('administrator_cooldown' if any(
+                limits.get(k, {}).get('source') == 'administrator_cooldown'
+                and float(limits.get(k, {}).get('until') or 0) > now
+                for k in (name, identity)) else 'quota_limit')
         if model_name:
             try:
                 CookieModelCatalog.from_client(client).resolve(model_name)
@@ -487,7 +515,7 @@ class ServerState:
 
     def mark_account_success(self, account_name: str) -> None:
         versions = getattr(self, '_credential_versions', {})
-        if account_name in versions:
+        if account_name in versions and getattr(self.args, 'cookie_protocol', 'legacy') == 'legacy':
             client = next(c for n, c in self.clients if n == account_name)
             try:
                 versions[account_name] = save_account_session(account_name, self.account_dir,
@@ -592,6 +620,10 @@ class ServerState:
                     if budget is not None:
                         budget.remaining()
                 except BaseException as exc:
+                    if isinstance(exc, (AuthError, StrictProUnavailable)) and budget is not None and not budget.submitted:
+                        reason = 'session_unavailable' if isinstance(exc, AuthError) else 'pro_unavailable'
+                        emit('request_not_submitted', reason=reason, account=account_name)
+                        raise PoolUnavailable(str(exc), accounts={account_name: {'reason': reason}}, retry_after=60) from exc
                     if managed and isinstance(exc, Exception):
                         self.mark_account_failure(account_name, exc)
                     elif managed and isinstance(exc, asyncio.CancelledError) and budget and budget.submitted:
@@ -810,6 +842,38 @@ def resolve_requested_model(payload: dict[str, Any], state: ServerState) -> tupl
     return requested_model, normalized_model
 
 
+async def selected_cookie_generate(state, account_name, client, prompt, *, files, model, timeout):
+    protocol = getattr(state.args, 'cookie_protocol', 'legacy')
+    if protocol == 'legacy':
+        return await cookie_generate(client, prompt, files=files, model=model, timeout=timeout)
+    if protocol != 'process-session':
+        raise PoolUnavailable('Unsupported Cookie protocol; not submitted')
+    if files:
+        raise EndpointDisabled('process-session currently supports text only; attachments were not submitted')
+    from cookie_protocol import generate
+    from cookie_protocol.errors import NotSubmitted, SubmissionUncertain as ProtocolUncertain
+    try:
+        result = await generate(account=account_name, account_dir=state.account_dir,
+                                prompt=prompt, model_id=model.model_id,
+                                proxy=getattr(client, 'proxy', None), timeout=timeout)
+    except NotSubmitted as exc:
+        raise PoolUnavailable(str(exc)) from None
+    except ProtocolUncertain as exc:
+        raise SubmissionUncertain(str(exc)) from None
+    from types import SimpleNamespace
+    return SimpleNamespace(text=result.text, text_delta=result.text)
+
+
+async def selected_cookie_generate_stream(state, account_name, client, prompt, *, files, model, timeout):
+    if getattr(state.args, 'cookie_protocol', 'legacy') == 'legacy':
+        async for output in cookie_generate_stream(client, prompt, files=files, model=model, timeout=timeout):
+            yield output
+    else:
+        # Validate full terminal/model before exposing any potentially partial text.
+        yield await selected_cookie_generate(state, account_name, client, prompt,
+                                             files=files, model=model, timeout=timeout)
+
+
 @request_deadline
 async def create_chat_completion(payload: dict[str, Any]) -> dict[str, Any]:
     state = require_state()
@@ -841,7 +905,8 @@ async def create_chat_completion(payload: dict[str, Any]) -> dict[str, Any]:
         try:
             async with state.account_request(account_name, request_id):
                 model = await state.prepare_request_model(account_name, client, model_name)
-                output = await cookie_generate(
+                output = await selected_cookie_generate(
+                    state, account_name,
                     client, prompt,
                     files=files or None,
                     model=model,
@@ -850,8 +915,8 @@ async def create_chat_completion(payload: dict[str, Any]) -> dict[str, Any]:
                 emit("output_received", response_chars=len(output.text or ""))
                 try:
                     validate_generated_text(output.text or "")
-                except Exception:
-                    emit("output_rejected", reason="empty_or_service_error")
+                except Exception as exc:
+                    emit("output_rejected", reason=type(exc).__name__)
                     raise
                 emit("output_validated", response_chars=len(output.text or ""))
         except Exception as exc:
@@ -958,7 +1023,8 @@ async def create_chat_completion_chunks(payload: dict[str, Any]) -> list[dict[st
         try:
             async with state.account_request(account_name, request_id):
                 model = await state.prepare_request_model(account_name, client, model_name)
-                async for output in cookie_generate_stream(
+                async for output in selected_cookie_generate_stream(
+                    state, account_name,
                     client, prompt,
                     files=files or None,
                     model=model,
@@ -1133,6 +1199,7 @@ class OpenAICompatibleHandler(BaseHTTPRequestHandler):
                     {
                         "status": "ok",
                         "transport": "cookie",
+                        "cookie_protocol": getattr(state.args, 'cookie_protocol', 'legacy'),
                         "account_control": True,
                         "operations_v1": True,
                         "admission_gate": GATE.state() | {'async_tasks':len(state._tasks),
@@ -1223,10 +1290,10 @@ class OpenAICompatibleHandler(BaseHTTPRequestHandler):
             ledger_key=operations.idempotency_key(self._client_id,self.headers.get('Idempotency-Key'))
             timeout = http_generation_timeout(self.headers, state.args.request_timeout)
             def run(factory):
-                budget = RequestBudget(timeout)
-                async def invoke():
-                    return await within_deadline(factory(), budget)
-                return state.run_async(invoke())
+                # One shared budget for generation, submission tracking and the
+                # synchronous wait. A nested shorter budget left the outer
+                # waiter using 480s and unaware that submission had occurred.
+                return state.run_async(factory(), timeout=timeout)
             if payload.get("stream"):
                 chunks = execute(ledger_key, payload,
                                  lambda: run(lambda: create_chat_completion_chunks(payload)),
@@ -1282,6 +1349,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--api-key", default=os.environ.get("GEMINI_CONSOLE_API_KEY", ""), help="Local bearer key (or GEMINI_CONSOLE_API_KEY)")
     parser.add_argument("--default-model", default=STRICT_PRO_MODEL)
+    parser.add_argument('--cookie-protocol', choices=('legacy', 'process-session'), default='legacy',
+                        help='Explicit HTTP protocol; process-session requires an enrolled browser for validation only. No fallback.')
     strict_group = parser.add_mutually_exclusive_group()
     strict_group.add_argument(
         "--strict-pro",

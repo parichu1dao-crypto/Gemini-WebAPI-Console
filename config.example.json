@@ -2,6 +2,7 @@
   "host": "127.0.0.1",
   "port": 8787,
   "transport": "cookie",
+  "cookie_protocol": "legacy",
   "proxy": null,
   "ignore_proxy": false,
   "account_dir": "accounts",
